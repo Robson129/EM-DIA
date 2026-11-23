@@ -87,12 +87,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "apple-mobile-web-app-title", content: "Em Dia" },
       { title: "Em Dia — contas e dívidas" },
       { name: "description", content: "Organize contas e dívidas e pague tudo em dia." },
-      { name: "author", content: "Lovable" },
+      { name: "author", content: "Em Dia" },
       { property: "og:title", content: "Em Dia" },
       { property: "og:description", content: "Organize contas e dívidas e pague tudo em dia." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {

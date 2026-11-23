@@ -1,8 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { authenticateCronRequest } from "@/integrations/supabase/cron-auth";
 import { agendaDe, diasAte, lembretesDe, normalizarContas, normalizarDividas } from "@/lib/finance";
-
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/firebase_messaging";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -15,37 +12,24 @@ function mesDe(d: Date) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-async function enviarAviso(token: string, titulo: string, corpo: string) {
-  const LOVABLE_API_KEY = process.env["LOVABLE_API_KEY"];
-  const connectionApiKey = process.env["FIREBASE_MESSAGING_API_KEY"];
-  if (!LOVABLE_API_KEY || !connectionApiKey) {
-    throw new Error("Chaves do aviso não configuradas");
-  }
-  const res = await fetch(`${GATEWAY_URL}/v1/projects/_/messages:send`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      "X-Connection-Api-Key": connectionApiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      message: {
-        token,
-        notification: { title: titulo, body: corpo },
-        data: { path: "/" },
-      },
-    }),
-  });
-  if (!res.ok) {
-    const corpoErro = await res.text();
-    // 404 UNREGISTERED / 400 INVALID_ARGUMENT: token velho, apagar em vez de tentar de novo.
-    return { ok: false as const, apagar: res.status === 404 || res.status === 400, status: res.status, corpoErro };
-  }
-  return { ok: true as const };
+/**
+ * Aceita a chamada do agendador da Vercel (Authorization: Bearer $CRON_SECRET).
+ * LOVABLE_CRON_SECRET continua valendo para quem ainda roda no Lovable.
+ */
+async function autenticar(request: Request): Promise<Response | null> {
+  const segredos = [process.env["CRON_SECRET"], process.env["LOVABLE_CRON_SECRET"]].filter((s): s is string => !!s);
+  if (!segredos.length) return new Response("Server configuration error", { status: 500 });
+  const token = /^Bearer ([^\s,]+)$/.exec(request.headers.get("authorization") ?? "")?.[1];
+  if (!token) return new Response("Unauthorized", { status: 401 });
+  const { createHash, timingSafeEqual } = await import("node:crypto");
+  const digest = (v: string) => createHash("sha256").update(v, "utf8").digest();
+  const ok = segredos.some((s) => timingSafeEqual(digest(token), digest(s)));
+  return ok ? null : new Response("Unauthorized", { status: 401 });
 }
 
 async function rodar() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { enviarAviso } = await import("@/lib/fcm.server");
   const { data: linhas, error } = await supabaseAdmin
     .from("dados_usuario")
     .select("user_id, contas, dividas, push_tokens");
@@ -106,12 +90,12 @@ export const Route = createFileRoute("/api/public/cron-lembretes")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const negado = await authenticateCronRequest(request);
+        const negado = await autenticar(request);
         if (negado) return negado;
         return Response.json(await rodar());
       },
       POST: async ({ request }) => {
-        const negado = await authenticateCronRequest(request);
+        const negado = await autenticar(request);
         if (negado) return negado;
         return Response.json(await rodar());
       },

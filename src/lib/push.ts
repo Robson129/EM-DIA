@@ -1,10 +1,11 @@
 import { initializeApp } from "firebase/app";
 import { getMessaging, getToken, isSupported } from "firebase/messaging";
 
-const appId = import.meta.env["VITE_LOVABLE_CONNECTOR_FIREBASE_MESSAGING_APP_ID"] as string | undefined;
-const vapidKey = import.meta.env["VITE_LOVABLE_CONNECTOR_FIREBASE_MESSAGING_VAPID_KEY"] as string | undefined;
-const apiKey = import.meta.env["VITE_LOVABLE_CONNECTOR_FIREBASE_MESSAGING_WEB_API_KEY"] as string | undefined;
-const projectId = import.meta.env["VITE_LOVABLE_CONNECTOR_FIREBASE_MESSAGING_PROJECT_ID"] as string | undefined;
+const env = import.meta.env as Record<string, string | undefined>;
+const appId = env["VITE_FIREBASE_APP_ID"];
+const vapidKey = env["VITE_FIREBASE_VAPID_KEY"];
+const apiKey = env["VITE_FIREBASE_API_KEY"];
+const projectId = env["VITE_FIREBASE_PROJECT_ID"];
 
 export type PushResult =
   | { status: "registered"; token: string }
@@ -23,7 +24,7 @@ export async function enablePush(): Promise<PushResult> {
   if (!("Notification" in window) || !(await isSupported())) {
     return { status: "unsupported" };
   }
-  // A pré-visualização do Lovable roda em iframe, onde o navegador recusa o pedido de permissão.
+  // Dentro de um iframe (pré-visualizações) o navegador recusa o pedido de permissão.
   if (window.top !== window.self) {
     return { status: "open-in-new-tab" };
   }
