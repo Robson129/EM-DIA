@@ -1,9 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateResponse, GatewayError } from "@lovable.dev/ai-gateway";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
 export const perguntarAssistente = createServerFn({ method: "POST" })
+  // Só quem está logado usa o assistente: sem isso, qualquer um gastaria os créditos de IA.
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: { contexto: string; mensagens: Msg[] }) => {
     if (typeof d?.contexto !== "string" || !Array.isArray(d.mensagens)) throw new Error("Dados inválidos");
     return { contexto: d.contexto.slice(0, 8000), mensagens: d.mensagens.slice(-12).map((m) => ({ role: m.role === "assistant" ? "assistant" as const : "user" as const, content: String(m.content).slice(0, 2000) })) };

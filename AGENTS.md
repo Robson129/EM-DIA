@@ -32,6 +32,7 @@ use the editor.
 ## Rules
 
 - The payment agenda in `src/lib/finance.ts` (`agendaDe`) is the single source of truth for "what to pay": any screen that answers that question must read from it, never recompute due dates on its own.
-- Paid occurrences are tracked as a running counter (`pagas`), so the pay action must always target the oldest unpaid occurrence of an item; never let the UI mark an arbitrary occurrence paid.
+- Paid occurrences are tracked per month: `Conta.pagas` is a count per "YYYY-MM" and `Divida.pagos` is the list of amounts paid per "YYYY-MM" (`saldo` is always the current balance, already net of every payment). Pay and undo go through `marcarPago` / `desfazerUltimo` in `finance.ts`, which only accept the oldest unpaid occurrence of an item; never let the UI mark an arbitrary occurrence paid.
+- Data saved by older versions (`pagas` as a plain number) is converted on load by `normalizarContas` / `normalizarDividas`; anything that reads `dados_usuario` (hook, cron) must pass it through them.
 - User data (contas/dividas/receitas) lives in one jsonb row per user in public.dados_usuario via src/hooks/use-dados-nuvem.ts; why: keeps finance.ts types unchanged and imports old localStorage data on first login.
 - Home-screen installation uses a manifest and PNG icons only; do not add app-shell caching without an explicit offline request, and keep the Firebase messaging worker separate to preserve notifications and preview freshness.

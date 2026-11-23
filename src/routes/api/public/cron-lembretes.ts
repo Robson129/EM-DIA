@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { authenticateCronRequest } from "@/integrations/supabase/cron-auth";
-import { agendaDe, diasAte, lembretesDe, type Conta, type Divida } from "@/lib/finance";
+import { agendaDe, diasAte, lembretesDe, normalizarContas, normalizarDividas } from "@/lib/finance";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/firebase_messaging";
 
@@ -62,8 +62,8 @@ async function rodar() {
     );
     if (!tokens.length) continue;
 
-    const contas = (linha.contas ?? []) as unknown as Conta[];
-    const dividas = (linha.dividas ?? []) as unknown as Divida[];
+    const contas = normalizarContas(linha.contas, mes);
+    const dividas = normalizarDividas(linha.dividas, mes);
     const pendentes = lembretesDe(agendaDe(contas, dividas, mes), hoje);
     if (!pendentes.length) continue;
 

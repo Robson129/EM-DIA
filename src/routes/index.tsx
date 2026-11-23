@@ -10,12 +10,18 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   FREQ_LABEL,
   agendaDe,
-  custoMensal,
+  dataLocalISO,
+  desfazerUltimo,
   diasAte,
+  marcarPago,
+  mesDe,
+  pagasNoMes,
+  pagosNoMes,
   planejar,
   resumoDe,
   urgenciaDe,
   vezDe,
+  vezDoItem,
   type Conta,
   type Divida,
   type Freq,
@@ -37,11 +43,8 @@ export const Route = createFileRoute("/")({
 });
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const uid = () => Math.random().toString(36).slice(2, 10);
-const mesAtual = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
+const uid = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10));
+const mesAtual = () => mesDe(new Date());
 const dia = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 
 function rotuloMes(mes: string) {
@@ -159,7 +162,7 @@ function PainelPagar({
 
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
             {([
-              ["Recebido no mês", r.dinheiro + r.jaPago, "text-accent-2", "border-t-accent-2"],
+              ["Recebido no mês", renda, "text-accent-2", "border-t-accent-2"],
               ["Já paguei", r.jaPago, "text-success", "border-t-success"],
               ["Ainda falta pagar", r.aPagar, "text-primary", "border-t-primary"],
               [r.falta > 0 ? "Falta para cobrir" : "Sobra livre", r.falta > 0 ? r.falta : r.sobra, r.falta > 0 ? "text-destructive" : "text-success", r.falta > 0 ? "border-t-destructive" : "border-t-success"],
@@ -275,7 +278,7 @@ function Index() {
 }
 
 function Painel({ userId, email }: { userId: string; email: string }) {
-  const { contas, dividas, receitas, setContas, setDividas, setReceitas, carregado, erro } = useDadosNuvem(userId);
+  const { contas, dividas, receitas, setContas, setDividas, setReceitas, setContasEDividas, carregado, erro } = useDadosNuvem(userId);
   const [mes, setMes] = useState(mesAtual);
   const [hoje, setHoje] = useState<Date | null>(null);
 
@@ -283,15 +286,17 @@ function Painel({ userId, email }: { userId: string; email: string }) {
 
   const [c, setC] = useState({ nome: "", valor: "", dia: "10", freq: "mensal" as Freq });
   const [d, setD] = useState({ nome: "", saldo: "", parcela: "", dia: "10", freq: "mensal" as Freq });
-  const [r, setR] = useState({ descricao: "", valor: "", data: new Date().toISOString().slice(0, 10) });
+  const [r, setR] = useState({ descricao: "", valor: "", data: dataLocalISO(new Date()) });
 
   const doMes = receitas.filter((x) => x.data.startsWith(mes));
   const renda = doMes.reduce((s, x) => s + x.valor, 0);
-  const plano = useMemo(() => planejar(contas, dividas, renda), [contas, dividas, renda]);
+  const agenda = useMemo(() => agendaDe(contas, dividas, mes), [contas, dividas, mes]);
+  const dinheiro = resumoDe(agenda, renda).dinheiro;
+  const plano = useMemo(() => planejar(contas, dividas, dinheiro, mes), [contas, dividas, dinheiro, mes]);
   const totalDividas = dividas.reduce((s, x) => s + x.saldo, 0);
 
   const contextoIA = useMemo(() => {
-    const ag = agendaDe(contas, dividas, mes);
+    const ag = agenda;
     const res = resumoDe(ag, renda);
     const d = (x: Date) => x.toLocaleDateString("pt-BR");
     return [
@@ -299,20 +304,20 @@ function Painel({ userId, email }: { userId: string; email: string }) {
       `Recebido no mês: ${brl(renda)} (${doMes.map((x) => `${x.descricao} ${brl(x.valor)}`).join("; ") || "nada"}).`,
       `Total a pagar em aberto: ${brl(res.aPagar)}. Já pago: ${brl(res.jaPago)}.`,
       "Pagamentos do mês:",
-      ...ag.map((p) => `- ${p.nome} (${p.tipo}) ${brl(p.valor)} vence ${d(p.data)} — ${p.pago ? "PAGO" : hoje && p.data < hoje ? "ATRASADO" : "em aberto"}`),
+      ...ag.map((p) => `- ${p.nome} (${p.tipo}) ${brl(p.valor)} vence ${d(p.data)} — ${p.pago ? "PAGO" : hoje && diasAte(p.data, hoje) < 0 ? "ATRASADO" : hoje && diasAte(p.data, hoje) === 0 ? "VENCE HOJE" : "em aberto"}`),
       "Dívidas:",
       ...dividas.map((x) => `- ${x.nome}: saldo ${brl(x.saldo)}, parcela ${brl(x.parcela)} ${x.freq}`),
     ].join("\n");
-  }, [contas, dividas, mes, renda, hoje, doMes]);
+  }, [agenda, dividas, mes, renda, hoje, doMes]);
 
   function pagarAgora(p: Pagamento) {
-    if (p.tipo === "conta") {
-      setContas(contas.map((y) => (y.id === p.refId ? { ...y, pagas: y.pagas + 1 } : y)));
-    } else {
-      setDividas(dividas.map((y) => (y.id === p.refId
-        ? { ...y, saldo: Math.max(0, y.saldo - p.valor), pagas: (y.pagas ?? 0) + 1 }
-        : y)));
-    }
+    const r = marcarPago(contas, dividas, p);
+    setContasEDividas(r.contas, r.dividas);
+  }
+
+  function desfazer(refId: string) {
+    const r = desfazerUltimo(contas, dividas, refId, mes);
+    setContasEDividas(r.contas, r.dividas);
   }
 
   return (
@@ -378,7 +383,7 @@ function Painel({ userId, email }: { userId: string; email: string }) {
         </Card>
 
         <Card title="2. Minhas contas">
-          <form className="mb-4 grid grid-cols-2 gap-2" onSubmit={(e) => { e.preventDefault(); const v = parseFloat(c.valor); if (!c.nome || !v) return; setContas([...contas, { id: uid(), nome: c.nome, valor: v, dia: parseInt(c.dia) || 1, freq: c.freq, pagas: 0 }]); setC({ ...c, nome: "", valor: "" }); }}>
+          <form className="mb-4 grid grid-cols-2 gap-2" onSubmit={(e) => { e.preventDefault(); const v = parseFloat(c.valor); if (!c.nome || !v) return; setContas([...contas, { id: uid(), nome: c.nome, valor: v, dia: parseInt(c.dia) || 1, freq: c.freq, pagas: {} }]); setC({ ...c, nome: "", valor: "" }); }}>
             <input className={input} placeholder="Ex: luz, aluguel" value={c.nome} onChange={(e) => setC({ ...c, nome: e.target.value })} />
             <input className={input} type="number" step="0.01" placeholder="Valor por pagamento" value={c.valor} onChange={(e) => setC({ ...c, valor: e.target.value })} />
             <input className={input} type="number" min={1} max={31} placeholder="Dia de vencimento" value={c.dia} onChange={(e) => setC({ ...c, dia: e.target.value })} />
@@ -388,15 +393,17 @@ function Painel({ userId, email }: { userId: string; email: string }) {
           <ul className="divide-y divide-border text-sm">
             {[...contas].sort((a, b) => a.dia - b.dia).map((x) => {
               const total = x.freq === "semanal" ? 4 : x.freq === "quinzenal" ? 2 : 1;
+              const pagas = pagasNoMes(x, mes);
+              const daVez = vezDoItem(agenda, x.id);
               return (
                 <li key={x.id} className="flex items-center justify-between gap-2 py-2">
                   <div>
                     <p className="font-semibold">{x.nome}</p>
-                    <p className="text-muted-foreground">{brl(x.valor)} · {FREQ_LABEL[x.freq]} · dia {x.dia} · pagas {x.pagas}/{total}</p>
+                    <p className="text-muted-foreground">{brl(x.valor)} · {FREQ_LABEL[x.freq]} · dia {x.dia} · pagas {pagas}/{total} no mês</p>
                   </div>
                   <div className="flex gap-2">
-                    <button disabled={x.pagas >= total} className="rounded-md bg-secondary px-2 py-1 disabled:opacity-40" onClick={() => setContas(contas.map((y) => y.id === x.id ? { ...y, pagas: y.pagas + 1 } : y))}>Paguei</button>
-                    <button className="rounded-md px-2 py-1 text-muted-foreground" title="Novo mês" onClick={() => setContas(contas.map((y) => y.id === x.id ? { ...y, pagas: 0 } : y))}>↺</button>
+                    <button disabled={!daVez} className="rounded-md bg-secondary px-2 py-1 disabled:opacity-40" onClick={() => daVez && pagarAgora(daVez)}>Paguei</button>
+                    <button disabled={!pagas} className="rounded-md px-2 py-1 text-muted-foreground disabled:opacity-30" title="Desfazer o último pagamento deste mês" onClick={() => desfazer(x.id)}>↺</button>
                     <button className="text-destructive" onClick={() => setContas(contas.filter((y) => y.id !== x.id))}>×</button>
                   </div>
                 </li>
@@ -406,7 +413,7 @@ function Painel({ userId, email }: { userId: string; email: string }) {
         </Card>
 
         <Card title="3. Minhas dívidas" right={`resta ${brl(totalDividas)}`}>
-          <form className="mb-4 grid grid-cols-2 gap-2" onSubmit={(e) => { e.preventDefault(); const s = parseFloat(d.saldo); if (!d.nome || !s) return; setDividas([...dividas, { id: uid(), nome: d.nome, saldo: s, parcela: parseFloat(d.parcela) || 0, freq: d.freq, dia: parseInt(d.dia) || 10, pagas: 0 }]); setD({ ...d, nome: "", saldo: "", parcela: "" }); }}>
+          <form className="mb-4 grid grid-cols-2 gap-2" onSubmit={(e) => { e.preventDefault(); const s = parseFloat(d.saldo); if (!d.nome || !s) return; setDividas([...dividas, { id: uid(), nome: d.nome, saldo: s, parcela: parseFloat(d.parcela) || 0, freq: d.freq, dia: parseInt(d.dia) || 10, pagos: {} }]); setD({ ...d, nome: "", saldo: "", parcela: "" }); }}>
             <input className={input} placeholder="Ex: cartão, empréstimo" value={d.nome} onChange={(e) => setD({ ...d, nome: e.target.value })} />
             <input className={input} type="number" step="0.01" placeholder="Quanto devo" value={d.saldo} onChange={(e) => setD({ ...d, saldo: e.target.value })} />
             <input className={input} type="number" step="0.01" placeholder="Quanto pagar por vez" value={d.parcela} onChange={(e) => setD({ ...d, parcela: e.target.value })} />
@@ -415,22 +422,27 @@ function Painel({ userId, email }: { userId: string; email: string }) {
             <button className={`${btn} col-span-2`}>Adicionar dívida</button>
           </form>
           <ul className="divide-y divide-border text-sm">
-            {dividas.map((x) => (
+            {dividas.map((x) => {
+              const daVez = vezDoItem(agenda, x.id);
+              const pagosMes = pagosNoMes(x, mes).length;
+              return (
               <li key={x.id} className="flex items-center justify-between gap-2 py-2">
                 <div>
                   <p className="font-semibold">{x.nome} {x.saldo <= 0 && <span className="text-success">✓ Quitada</span>}</p>
                   <p className="text-muted-foreground">Resta {brl(x.saldo)} · {brl(x.parcela)} {FREQ_LABEL[x.freq].toLowerCase()} · dia {x.dia ?? 30}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button disabled={x.saldo <= 0} className="rounded-md bg-secondary px-2 py-1 disabled:opacity-40" onClick={() => setDividas(dividas.map((y) => (y.id === x.id ? { ...y, saldo: Math.max(0, y.saldo - (y.parcela || y.saldo)), pagas: (y.pagas ?? 0) + 1 } : y)))}>Paguei parcela</button>
+                  <button disabled={!daVez} className="rounded-md bg-secondary px-2 py-1 disabled:opacity-40" onClick={() => daVez && pagarAgora(daVez)}>Paguei parcela</button>
+                  <button disabled={!pagosMes} className="rounded-md px-2 py-1 text-muted-foreground disabled:opacity-30" title="Desfazer o último pagamento deste mês" onClick={() => desfazer(x.id)}>↺</button>
                   <button className="text-destructive" onClick={() => setDividas(dividas.filter((y) => y.id !== x.id))}>×</button>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </Card>
       </div>
-      <p className="mt-8 text-center text-xs text-muted-foreground">Seus dados ficam salvos neste navegador.</p>
+      <p className="mt-8 text-center text-xs text-muted-foreground">Seus dados ficam salvos na sua conta e aparecem em qualquer aparelho em que você entrar.</p>
     </main>
   );
 }
