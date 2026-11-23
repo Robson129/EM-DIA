@@ -226,7 +226,7 @@ type EstadoAviso = "parado" | "ativando" | "ativo" | "nova-aba" | "negado" | "se
 const MSG_AVISO: Record<Exclude<EstadoAviso, "parado" | "ativando" | "ativo">, string> = {
   "nova-aba": "Abra o app em uma aba própria (fora da pré-visualização) para ativar os avisos.",
   negado: "Seu navegador bloqueou os avisos. Libere nas configurações do site e tente de novo.",
-  "sem-config": "Falta terminar a configuração do Firebase (a parte de web push).",
+  "sem-config": "Os avisos ainda não foram configurados neste site.",
   "sem-suporte": "Este navegador não aceita avisos.",
   erro: "Não consegui ativar. Verifique a internet e tente de novo.",
 };
