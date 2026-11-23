@@ -1,0 +1,1 @@
+alter table public.dados_usuario add column if not exists push_tokens jsonb not null default '[]'::jsonb;
