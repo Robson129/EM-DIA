@@ -3,6 +3,18 @@ import { supabase } from "@/integrations/supabase/client";
 
 const input = "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring";
 
+/** Traduz o erro do login para algo que a pessoa consiga resolver. */
+function motivo(error: { code?: string | undefined; message: string; status?: number | undefined }, padrao: string) {
+  const c = error.code ?? "";
+  if (c === "email_not_confirmed") return "Falta confirmar o e-mail: abra o link que enviamos (veja também o spam).";
+  if (c === "over_email_send_rate_limit" || error.status === 429) return "Muitas tentativas seguidas. Espere alguns minutos e tente de novo.";
+  if (c === "user_already_exists" || c === "email_exists") return "Esse e-mail já tem conta. Use \"Já tenho conta, quero entrar\".";
+  if (c === "weak_password" || error.message.includes("Password")) return "A senha precisa ter pelo menos 6 caracteres.";
+  if (c === "signup_disabled") return "A criação de contas está desligada no momento.";
+  if (c === "invalid_credentials") return "E-mail ou senha incorretos. Se a sua conta era da versão antiga do app, crie uma nova.";
+  return padrao;
+}
+
 export function Entrar() {
   const [modo, setModo] = useState<"entrar" | "criar">("entrar");
   const [email, setEmail] = useState("");
@@ -15,10 +27,10 @@ export function Entrar() {
     setOcupado(true); setMsg(null);
     if (modo === "entrar") {
       const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
-      if (error) setMsg("E-mail ou senha incorretos.");
+      if (error) setMsg(motivo(error, "E-mail ou senha incorretos."));
     } else {
       const { data, error } = await supabase.auth.signUp({ email, password: senha, options: { emailRedirectTo: window.location.origin } });
-      if (error) setMsg(error.message.includes("Password") ? "A senha precisa ter pelo menos 6 caracteres." : "Não consegui criar a conta. Confira o e-mail.");
+      if (error) setMsg(motivo(error, "Não consegui criar a conta. Confira o e-mail."));
       else if (!data.session) setMsg("Pronto! Enviamos um link para o seu e-mail. Clique nele para ativar a conta.");
     }
     setOcupado(false);
